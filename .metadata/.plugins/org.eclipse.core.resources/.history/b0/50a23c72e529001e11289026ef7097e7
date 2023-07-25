@@ -1,0 +1,339 @@
+package controller;
+
+import java.io.IOException;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.util.ArrayList;
+import java.util.Enumeration;
+
+import javax.servlet.RequestDispatcher;
+import javax.servlet.ServletConfig;
+import javax.servlet.ServletException;
+import javax.servlet.annotation.MultipartConfig;
+import javax.servlet.annotation.WebServlet;
+import javax.servlet.http.Cookie;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
+
+import com.oreilly.servlet.MultipartRequest;
+import com.oreilly.servlet.multipart.DefaultFileRenamePolicy;
+
+import dao.ProductDAO;
+import vo.Product;
+
+
+@WebServlet("*.do")
+public class MainController extends HttpServlet {
+	private static final long serialVersionUID = 12L;
+	
+	ProductDAO productDAO = null;
+
+	public void init(ServletConfig config) throws ServletException {
+		productDAO = new ProductDAO();
+	}
+
+	protected void doGet(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+		doPost(request, response);
+	}
+
+	protected void doPost(HttpServletRequest request, HttpServletResponse response) throws ServletException, IOException {
+		request.setCharacterEncoding("utf-8");
+		response.setContentType("text/html; charset=utf-8");
+		
+		String uri = request.getRequestURI();
+		String command = uri.substring(uri.lastIndexOf("/"));
+		
+		String nextPage = null;
+		
+		//�꽭�뀡 �깮�꽦
+		HttpSession session = request.getSession();
+		
+		if(command.equals("/productList.do")) { //�긽�뭹 紐⑸줉 
+			
+			ArrayList<Product> productList = productDAO.getProductList();
+			
+			request.setAttribute("productList", productList);
+			
+			nextPage = "/product/productList.jsp";
+				
+		}else if(command.equals("/productInfo.do")) { //�긽�뭹 �젙蹂�
+			String productId = request.getParameter("productId");
+			Product product = productDAO.getProduct(productId);
+			
+			request.setAttribute("product", product);
+			
+			nextPage = "/product/productInfo.jsp";
+		}else if(command.equals("/productForm.do")) { //�긽�뭹 �벑濡� �럹�씠吏� �슂泥�
+			
+			nextPage = "/product/productForm.jsp";
+		}else if(command.equals("/addProduct.do")) { //�긽�뭹 �벑濡� 泥섎━
+			String realFolder = "C:/ak/market/src/main/webapp/upload";
+
+			MultipartRequest multi = new MultipartRequest(request, realFolder, 5*1024*1024,
+					"utf-8", new DefaultFileRenamePolicy());
+			
+			//name �냽�꽦 媛��졇�삤湲�(二쇱쓽! multi瑜� �궗�슜)
+			String productId = multi.getParameter("productId");
+			String pname = multi.getParameter("pname");
+			int unitPrice = Integer.parseInt(multi.getParameter("unitPrice"));
+			String description = multi.getParameter("description");
+			String category = multi.getParameter("category");
+			String manufacturer = multi.getParameter("manufacturer");
+			long unitsInStock = Long.parseLong(multi.getParameter("unitsInStock"));
+			String condition = multi.getParameter("condition");
+			
+			//productImage �냽�꽦 媛��졇�샂
+			Enumeration<String> files = multi.getFileNames();
+			String name = "";
+			String productImage = "";
+			if(files.hasMoreElements()) {
+				name = (String)files.nextElement();
+				productImage = multi.getFilesystemName(name);
+			}
+			
+			//Product 媛앹껜 �깮�꽦
+			Product newProduct = new Product();
+			newProduct.setProductId(productId);
+			newProduct.setPname(pname);
+			newProduct.setUnitPrice(unitPrice);
+			newProduct.setDescription(description);
+			newProduct.setCategory(category);
+			newProduct.setManufacturer(manufacturer);
+			newProduct.setUnitsInStock(unitsInStock);
+			newProduct.setCondition(condition);
+			newProduct.setProductImage(productImage);
+			
+			productDAO.addProduct(newProduct);  //�긽�뭹 �벑濡� 泥섎━
+		
+			nextPage = "/productList.do";
+		}else if(command.equals("/editProduct.do")) { //�긽�뭹 �렪吏� �럹�씠吏�
+			ArrayList<Product> productList = productDAO.getProductList();
+			
+			String edit = request.getParameter("edit");
+			
+			request.setAttribute("productList", productList);
+			request.setAttribute("edit", edit);
+			
+			nextPage = "/product/editProduct.jsp";
+		}else if(command.equals("/addCart.do")) { //�옣諛붽뎄�땲�뿉 �떞湲� 泥섎━	
+			String id = request.getParameter("productId");
+			
+			//�옣諛붽뎄�땲�뿉 �떞湲�
+			ArrayList<Product> goodsList = productDAO.getProductList();
+			Product goods = new Product();
+			
+			for(int i=0; i<goodsList.size(); i++) {
+				 goods = goodsList.get(i);
+				 if(goods.getProductId().equals(id)) 
+					 break;
+			}
+			
+			//�슂泥� �븘�씠�뵒�쓽 �긽�뭹�쓣 �떞�� �옣諛붽뎄�땲瑜� 珥덇린�솕 �븿
+			ArrayList<Product> list = (ArrayList<Product>)session.getAttribute("cartlist");
+			if(list == null) {
+				list = new ArrayList<>();
+				session.setAttribute("cartlist", list);	 //�옣諛붽뎄�땲 �꽭�뀡 諛쒓툒
+			}
+			
+			//�슂泥� �븘�씠�뵒�쓽 �긽�뭹�씠 �옣諛붽뎄�땲�뿉 �떞湲� 紐⑸줉�씠硫� �빐�떦 �긽�뭹�쓽 �닔�웾�쓣 利앷��떆�궡
+			int cnt = 0;
+			Product goodsQnt = new Product(); 
+			
+			for(int i=0; i<list.size(); i++){
+				goodsQnt = list.get(i);
+				if(goodsQnt.getProductId().equals(id)){
+					cnt++;	//�빐�떦 �븘�씠�뵒�� 媛숈� �뭹紐⑹씠硫� 1利앷�
+					int orderQuantity = goodsQnt.getQuantity() + 1;	//二쇰Ц �닔�웾 �빀怨�
+					goodsQnt.setQuantity(orderQuantity);
+				}
+			}
+			
+			//�옣諛붽뎄�땲�뿉 �떞湲� 紐⑸줉�씠 �븘�땲硫� �빐�떦 �긽�뭹�쓽 �닔�웾�쓣 1濡쒗븯怨�, �옣諛붽뎄�땲 紐⑸줉�뿉 異붽��븿
+			if(cnt == 0) {
+				goods.setQuantity(1);
+				list.add(goods);
+			}
+		}else if(command.equals("/cart.do")) { //�옣諛붽뎄�땲 �럹�씠吏�
+			//�옣諛붽뎄�땲�뿉 �꽭�뀡 媛��졇�삤湲�(�꽭�뀡 �쑀吏�)
+			ArrayList<Product> cartList = (ArrayList<Product>)session.getAttribute("cartlist");
+			if(cartList == null){
+				cartList = new ArrayList<>();
+			}
+			
+			Product product = null;
+			int sum = 0;
+			int total = 0;
+			for(int i=0; i<cartList.size(); i++){
+				product = cartList.get(i);	//�옣諛붽뎄�땲�뿉 �뱾�뼱�엳�뒗 �긽�뭹
+				total = product.getUnitPrice() * product.getQuantity();	//�뭹紐⑸퀎 �빀怨� = 媛�寃� x �닔�웾					
+				sum += total;   //珥앹븸
+			}
+			
+			String cartId = session.getId();  //cartId - 二쇰Ц 肄붾뱶濡� �궗�슜
+			
+			//紐⑤뜽 �깮�꽦
+			request.setAttribute("cartList", cartList);
+			request.setAttribute("sum", sum);
+			request.setAttribute("cartId", cartId);
+			
+			nextPage = "/product/cart.jsp";
+		}else if(command.equals("/removeCart.do")) { //�옣諛붽뎄�땲�쓽 媛쒕퀎 �뭹紐� �궘�젣
+			String id = request.getParameter("productId");
+			
+			//�옣諛붽뎄�땲 媛��졇�삤湲�(�꽭�뀡 �쑀吏�)
+			ArrayList<Product> cartList = (ArrayList<Product>)session.getAttribute("cartlist");
+			
+			Product selProduct = new Product();  //�궘�젣�븷 �뭹紐� �꽑�깮
+			for(int i=0; i<cartList.size(); i++) {
+				selProduct = cartList.get(i);
+				if(selProduct.getProductId().equals(id)) { //�쇅遺� �엯�젰�맂 �긽�뭹肄붾뱶�� �씪移섑븯硫�
+					cartList.remove(selProduct); //�빐�떦 �뭹紐� �궘�젣
+				}	
+			}
+		}else if(command.equals("/deleteCart.do")) {  //�옣諛붽뎄�땲 珥덇린�솕(�궘�젣)
+			session.invalidate(); //�옣諛붽뎄�땲 �꽭�뀡 �궘�젣
+		}else if(command.equals("/shippingInfo.do")) {
+			
+			String cartId = request.getParameter("cartId");
+			
+			request.setAttribute("cartId", cartId);
+			
+			nextPage = "/product/shippingInfo.jsp?cartId=" + cartId;
+		}else if(command.equals("/processShippingInfo.do")) {
+			//荑좏궎 諛쒗뻾
+			Cookie shippingId = new Cookie("Shipping_cartId", 
+					URLEncoder.encode(request.getParameter("cartId"), "utf-8"));  //荑좏궎 �씠由� - 二쇰Ц踰덊샇
+			Cookie name = new Cookie("Shipping_name", 
+					URLEncoder.encode(request.getParameter("name"), "utf-8"));  //荑좏궎 �씠由� - �씠由�
+			Cookie shippingDate = new Cookie("Shipping_shippingDate", 
+					URLEncoder.encode(request.getParameter("shippingDate"), "utf-8"));  //荑좏궎 �씠由� - 諛곗넚�씪
+			Cookie country = new Cookie("Shipping_country", 
+					URLEncoder.encode(request.getParameter("country"), "utf-8"));  //荑좏궎 �씠由� - 援�媛�
+			Cookie zipCode = new Cookie("Shipping_zipCode", 
+					URLEncoder.encode(request.getParameter("zipCode"), "utf-8"));  //荑좏궎 �씠由� - �슦�렪踰덊샇
+			Cookie addressName = new Cookie("Shipping_addressName", 
+					URLEncoder.encode(request.getParameter("addressName"), "utf-8"));  //荑좏궎 �씠由� - 二쇱냼
+					
+			//荑좏궎 �쑀�슚湲곌컙 1�씪
+			shippingId.setMaxAge(24*60*60);
+			name.setMaxAge(24*60*60);
+			shippingDate.setMaxAge(24*60*60);
+			country.setMaxAge(24*60*60);
+			zipCode.setMaxAge(24*60*60);
+			addressName.setMaxAge(24*60*60);
+			
+			//�겢�씪�씠�뼵�듃 而댁쑝濡� 荑좏궎 蹂대궡湲�
+			response.addCookie(shippingId);
+			response.addCookie(name);
+			response.addCookie(shippingDate);
+			response.addCookie(country);
+			response.addCookie(zipCode);
+			response.addCookie(addressName);
+			
+			//荑좏궎瑜� 諛쏆븘�꽌 �궗�슜�븷 蹂��닔
+			//String cartId = session.getId();   //二쇰Ц踰덊샇 - �꽭�뀡 �븘�씠�뵒
+			String shipping_cartId = "";       //二쇰Ц踰덊샇
+			String shipping_name = "";         //二쇰Ц�옄 �씠由�
+			String shipping_shippingDate = ""; //諛곗넚�씪
+			String shipping_country = "";      //援�媛�
+			String shipping_zipCode = "";      //�슦�렪踰덊샇
+			String shipping_addressName = "";  //二쇱냼
+			
+			Cookie[] cookies = request.getCookies(); //荑좉린 諛쏄린(諛곗뿴)
+			
+			if(cookies != null){
+				for(int i=0; i<cookies.length; i++){
+					Cookie cookie = cookies[i];
+					String cname = cookie.getName();  //荑좏궎�씠由�
+					if(cname.equals("Shipping_cartId")) //荑좉린�씠由꾧낵 媛숈쑝硫�
+						//荑좏궎 媛믪쓣 媛��졇�샂
+						shipping_cartId = URLDecoder.decode(cookie.getValue(), "utf-8");
+					if(cname.equals("Shipping_name"))
+						shipping_name = URLDecoder.decode(cookie.getValue(), "utf-8");
+					if(cname.equals("Shipping_shippingDate"))
+						shipping_shippingDate = URLDecoder.decode(cookie.getValue(), "utf-8");
+					if(cname.equals("Shipping_country"))
+						shipping_country = URLDecoder.decode(cookie.getValue(), "utf-8");
+					if(cname.equals("Shipping_zipCode"))
+						shipping_zipCode = URLDecoder.decode(cookie.getValue(), "utf-8");
+					if(cname.equals("Shipping_addressName"))
+						shipping_addressName = URLDecoder.decode(cookie.getValue(), "utf-8");
+				}
+			}
+			
+			String cartId = request.getParameter("cartId");
+			
+			//�옣諛붽뎄�땲�뿉 �꽭�뀡 媛��졇�삤湲�(�꽭�뀡 �쑀吏�)
+			ArrayList<Product> cartList = (ArrayList<Product>)session.getAttribute("cartlist");
+			if(cartList == null){
+				cartList = new ArrayList<>();
+			}
+			
+			Product product = null;
+			int sum = 0;
+			int total = 0;
+			for(int i=0; i<cartList.size(); i++){
+				product = cartList.get(i);	//�옣諛붽뎄�땲�뿉 �뱾�뼱�엳�뒗 �긽�뭹
+				total = product.getUnitPrice() * product.getQuantity();	//�뭹紐⑸퀎 �빀怨� = 媛�寃� x �닔�웾					
+				sum += total;   //珥앹븸
+			}
+			
+			//紐⑤뜽 - 荑좏궎
+			request.setAttribute("shipping_name", shipping_name);
+			request.setAttribute("shipping_shippingDate", shipping_shippingDate);
+			request.setAttribute("shipping_zipCode", shipping_zipCode);
+			request.setAttribute("shipping_addressName", shipping_addressName);
+			
+			//紐⑤뜽 - 怨꾩궛
+			request.setAttribute("cartList", cartList);
+			request.setAttribute("sum", sum);
+			request.setAttribute("cartId", cartId);
+			
+			nextPage = "/product/orderConfirm.jsp";
+		}else if(command.equals("/thanksCustomer.do")) {
+			String shipping_cartId = "";
+			String shipping_shippingDate = "";
+			
+			Cookie[] cookies = request.getCookies();
+			
+			if(cookies != null){
+				for(int i=0; i<cookies.length; i++){
+					Cookie cookie = cookies[i];
+					String name = cookie.getName();
+					if(name.equals("Shipping_cartId"))
+						shipping_cartId = URLDecoder.decode(cookie.getValue(), "utf-8");
+					if(name.equals("Shipping_shippingDate"))
+						shipping_shippingDate = URLDecoder.decode(cookie.getValue(), "utf-8");
+				}
+			}
+			
+			request.setAttribute("shipping_cartId", shipping_cartId);
+			request.setAttribute("shipping_shippingDate", shipping_shippingDate);
+			
+			nextPage = "/product/thanksCustomer.jsp";
+		}
+		
+		
+		//�럹�씠吏� �씠�룞 - �룷�썙�뵫
+		if(command.equals("/addCart.do")) {
+			String id = request.getParameter("productId");
+			
+			response.sendRedirect("/productInfo.do?productId=" + id);  //�긽�꽭 �젙蹂� �럹�씠吏� �씠�룞
+		}else if(command.equals("/removeCart.do") || command.equals("/deleteCart.do")) {
+			response.sendRedirect("/cart.do");  //�옣諛붽뎄�땲 �럹�씠吏�濡� �씠�룞
+		}
+		else {
+			RequestDispatcher dispatcher = 
+					request.getRequestDispatcher(nextPage);
+			
+			dispatcher.forward(request, response);
+		}
+	}
+	
+	public void destroy() {
+		System.out.println("Servlet �빐�젣...");
+	}
+
+}
